@@ -1,102 +1,74 @@
 #!/usr/bin/python3
 
 import argparse
-import subprocess
 import json
 import os
-import time
+import subprocess
 import statistics
-import sys
 from tabulate import tabulate
-from scipy import stats
-import math
 
-def confidence_interval(data, confidence=0.95):
-    n = len(data)
-    mean = statistics.mean(data)
-    stderr = statistics.stdev(data) / math.sqrt(n)
-    interval = stderr * stats.t.ppf((1 + confidence) / 2., n-1)
-    return mean - interval, mean + interval
-
-def run_benchmark(executable, suite, test_file, num_iterations):
+def run_benchmark(executable, suite, test_file, iterations, index, total):
     times = []
-    is_tty = sys.stdout.isatty()
-    for i in range(num_iterations):
-        if is_tty:
-            print(f"\033[KIteration {i+1}/{num_iterations}", end='\r')
-        else:
-            print(f"Iteration {i+1}/{num_iterations}")
-
-        cmd = [executable, os.path.join(suite, test_file)]
-        start_time = time.time()
-        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        end_time = time.time()
-        total_seconds = end_time - start_time
-        times.append(total_seconds)
-
-        avg_time = statistics.mean(times[:i+1])
-        if is_tty:
-            print(f"\033[KIteration {i+1}/{num_iterations}, Average time: {avg_time:.4f}s", end='\r')
-
-    if is_tty:
-        print("\033[K", end='')
-    mean_time = statistics.mean(times)
-    stdev_time = statistics.stdev(times) if len(times) > 1 else 0
-    stdev_percent = (stdev_time / mean_time) * 100 if mean_time != 0 else 0
-    ci_low, ci_high = confidence_interval(times) if len(times) > 1 else (0, 0)
-    return mean_time, stdev_percent, ci_low, ci_high, times
+    for i in range(iterations):
+        print(f"[{index}/{total}] Iteration {i+1}/{iterations} for {suite}/{test_file}...", end="\r")
+        result = subprocess.run([f"time -p {executable} {suite}/{test_file}"], shell=True, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True)
+        time_output = result.stderr.split("\n")
+        real_time_line = [line for line in time_output if "real" in line][0]
+        time_taken = float(real_time_line.split(" ")[-1])
+        times.append(time_taken)
+    mean = statistics.mean(times)
+    stdev = statistics.stdev(times) if len(times) > 1 else 0
+    min_time = min(times)
+    max_time = max(times)
+    print(f"[{index}/{total}] {suite}/{test_file} completed.")
+    return mean, stdev, min_time, max_time, times
 
 def main():
     parser = argparse.ArgumentParser(description="Run JavaScript benchmarks.")
-    parser.add_argument("--suites", default="all", help="Comma-separated list of suites to run. Default is 'all'.")
-    parser.add_argument("--warmup", action="store_true", help="Perform a warm-up run of the SunSpider suite.")
-    parser.add_argument("--iterations", type=int, default=3, help="Number of iterations per test. Default is 3.")
-    parser.add_argument("--output", default="results.json", help="JSON output file name. Default is 'results.json'.")
-    parser.add_argument("--test", default=None, help="Specific test to run, e.g., 'Kraken/ai-astar.js'.")
-    parser.add_argument("--exec", default="js", help="Executable used for running tests. Default is 'js'.")
+    parser.add_argument("--executable", "-e", default="js", help="Path to the JavaScript executable.")
+    parser.add_argument("--iterations", "-i", type=int, default=3, help="Number of iterations for each test.")
+    parser.add_argument("--suites", "-s", default="all", help="Comma-separated list of suites to run.")
+    parser.add_argument("--warmup", "-w", action="store_true", help="Perform a warm-up run of SunSpider.")
+    parser.add_argument("--output", "-o", default="results.json", help="JSON output file name.")
     args = parser.parse_args()
+
+    if args.suites == "all":
+        suites = ["SunSpider", "Kraken", "Octane"]
+    else:
+        suites = args.suites.split(",")
 
     if args.warmup:
         print("Performing warm-up run of SunSpider...")
         for test_file in sorted(os.listdir("SunSpider")):
-            if test_file.endswith('.js'):
-                run_benchmark(args.exec, "SunSpider", test_file, 1)
-
-    if args.suites == "all":
-        suites_to_run = [d for d in os.listdir() if os.path.isdir(d)]
-    else:
-        suites_to_run = args.suites.split(",")
+            if not test_file.endswith(".js"):
+                continue
+            run_benchmark(args.executable, "SunSpider", test_file, 1, 0, 0)
 
     results = {}
-    for suite in sorted(suites_to_run):
-        if args.test and not args.test.startswith(suite):
-            continue
-        test_files = sorted([f for f in os.listdir(suite) if f.endswith('.js')])
-        suite_results = {}
-        for test_file in test_files:
-            if args.test and args.test != f"{suite}/{test_file}":
+    table_data = []
+    total_tests = sum(len(os.listdir(suite)) for suite in suites)
+    current_test = 1
+
+    for suite in suites:
+        results[suite] = {}
+        for test_file in sorted(os.listdir(suite)):
+            if not test_file.endswith(".js"):
                 continue
-            print(f"Running {suite}/{test_file}...")
-            mean_time, stdev_percent, ci_low, ci_high, times = run_benchmark(args.exec, suite, test_file, args.iterations)
-            suite_results[test_file] = {
-                "mean": mean_time,
-                "stdev": stdev_percent,
-                "ci_low": ci_low,
-                "ci_high": ci_high,
-                "runs": times
+            mean, stdev, min_time, max_time, runs = run_benchmark(args.executable, suite, test_file, args.iterations, current_test, total_tests)
+            results[suite][test_file] = {
+                "mean": mean,
+                "stdev": stdev,
+                "min": min_time,
+                "max": max_time,
+                "runs": runs
             }
-        results[suite] = suite_results
+            table_data.append([suite, test_file, f"{mean:.3f} ± {stdev:.3f}", f"{min_time:.3f} … {max_time:.3f}"])
+            current_test += 1
+
+    print(tabulate(table_data, headers=["Suite", "Test", "Mean ± σ", "Range (min … max)"]))
 
     with open(args.output, "w") as f:
         json.dump(results, f, indent=4)
-
-    table_data = []
-    for suite, suite_results in results.items():
-        for test, stats in suite_results.items():
-            ci_str = f"{stats['ci_low']:.6f} - {stats['ci_high']:.6f}"
-            table_data.append([suite, test, f"{stats['mean']:.6f}", f"{stats['stdev']:.2f}%", ci_str])
-        table_data.append(["─" * 10, "─" * 20, "─" * 15, "─" * 15, "─" * 30])
-    print(tabulate(table_data, headers=["Suite", "Test", "Mean Time (s)", "Std Dev (%)", "Confidence Interval"]))
 
 if __name__ == "__main__":
     main()
