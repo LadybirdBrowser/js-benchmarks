@@ -12,17 +12,22 @@ def run_benchmark(executable, suite, test_file, iterations, index, total, suppre
     for i in range(iterations):
         if not suppress_output:
             print(f"[{index}/{total}] {suite}/{test_file} (Iteration {i+1}/{iterations}, Avg: {statistics.mean(times):.3f}s)" if times else f"[{index}/{total}] {suite}/{test_file} (Iteration {i+1}/{iterations})", end="\r")
+
         result = subprocess.run([f"time -p {executable} {suite}/{test_file}"], shell=True, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True)
+        result.check_returncode()
+
         time_output = result.stderr.split("\n")
         real_time_line = [line for line in time_output if "real" in line][0]
         time_taken = float(real_time_line.split(" ")[-1])
         times.append(time_taken)
+
     mean = statistics.mean(times)
     stdev = statistics.stdev(times) if len(times) > 1 else 0
     min_time = min(times)
     max_time = max(times)
     if not suppress_output:
         print(f"[{index}/{total}] {suite}/{test_file} completed. Mean: {mean:.3f}s ± {stdev:.3f}s, Range: {min_time:.3f}s … {max_time:.3f}s\033[K")
+
     return mean, stdev, min_time, max_time, times
 
 def main():
