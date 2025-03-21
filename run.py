@@ -13,7 +13,7 @@ def run_benchmark(executable, suite, test_file, iterations, index, total, suppre
         if not suppress_output:
             print(f"[{index}/{total}] {suite}/{test_file} (Iteration {i+1}/{iterations}, Avg: {statistics.mean(times):.3f}s)" if times else f"[{index}/{total}] {suite}/{test_file} (Iteration {i+1}/{iterations})", end="\r")
 
-        result = subprocess.run([f"time -p {executable} {suite}/{test_file}"], shell=True, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True)
+        result = subprocess.run([f"time -p {executable} {suite}/{test_file}"], shell=True, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True, executable="/bin/bash")
         result.check_returncode()
 
         time_output = result.stderr.split("\n")
