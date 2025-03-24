@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import statistics
+import sys
 from tabulate import tabulate
 
 def run_benchmark(executable, suite, test_file, iterations, index, total, suppress_output=False):
@@ -12,6 +13,7 @@ def run_benchmark(executable, suite, test_file, iterations, index, total, suppre
     for i in range(iterations):
         if not suppress_output:
             print(f"[{index}/{total}] {suite}/{test_file} (Iteration {i+1}/{iterations}, Avg: {statistics.mean(times):.3f}s)" if times else f"[{index}/{total}] {suite}/{test_file} (Iteration {i+1}/{iterations})", end="\r")
+            sys.stdout.flush()
 
         result = subprocess.run([f"time -p {executable} {suite}/{test_file}"], shell=True, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True, executable="/bin/bash")
         result.check_returncode()
@@ -27,6 +29,7 @@ def run_benchmark(executable, suite, test_file, iterations, index, total, suppre
     max_time = max(times)
     if not suppress_output:
         print(f"[{index}/{total}] {suite}/{test_file} completed. Mean: {mean:.3f}s ± {stdev:.3f}s, Range: {min_time:.3f}s … {max_time:.3f}s\033[K")
+        sys.stdout.flush()
 
     return mean, stdev, min_time, max_time, times
 
