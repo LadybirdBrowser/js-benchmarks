@@ -43,7 +43,7 @@ def main():
     args = parser.parse_args()
 
     if args.suites == "all":
-        suites = ["SunSpider", "Kraken", "Octane"]
+        suites = ["SunSpider", "Kraken", "Octane", "JetStream"]
     else:
         suites = args.suites.split(",")
 
