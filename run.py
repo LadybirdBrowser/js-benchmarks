@@ -94,6 +94,17 @@ def run_benchmark(
         time_taken = float(real_time_line[0].split()[-1])
         times.append(time_taken)
 
+    if not times:
+        print("No valid times recorded.")
+        return {
+            "mean": None,
+            "stdev": None,
+            "min": None,
+            "max": None,
+            "runs": [],
+            "core": core if sys.platform.startswith("linux") else None,
+        }
+
     mean = statistics.mean(times)
     stdev = statistics.stdev(times) if len(times) > 1 else 0
     min_time = min(times)
@@ -232,6 +243,12 @@ def main():
             if suite not in results:
                 results[suite] = {}
             results[suite][test_file] = bench_result
+            if not bench_result["runs"]:
+                print(
+                    f"Warning: No valid runs recorded for {suite}/{test_file}. Skipping."
+                )
+                continue
+
             table_data.append(
                 [
                     suite,
