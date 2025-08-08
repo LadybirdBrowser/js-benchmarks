@@ -8,14 +8,14 @@ import statistics
 import sys
 from tabulate import tabulate
 
-def run_benchmark(executable, suite, test_file, iterations, index, total, suppress_output=False):
+def run_benchmark(executable, executable_arguments, suite, test_file, iterations, index, total, suppress_output=False):
     times = []
     for i in range(iterations):
         if not suppress_output:
             print(f"[{index}/{total}] {suite}/{test_file} (Iteration {i+1}/{iterations}, Avg: {statistics.mean(times):.3f}s)" if times else f"[{index}/{total}] {suite}/{test_file} (Iteration {i+1}/{iterations})", end="\r")
             sys.stdout.flush()
 
-        result = subprocess.run([f"time -p {executable} {suite}/{test_file}"], shell=True, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True, executable="/bin/bash")
+        result = subprocess.run([f"time -p {executable} {' '.join(executable_arguments)} {suite}/{test_file}"], shell=True, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True, executable="/bin/bash")
         result.check_returncode()
 
         time_output = result.stderr.split("\n")
@@ -36,6 +36,7 @@ def run_benchmark(executable, suite, test_file, iterations, index, total, suppre
 def main():
     parser = argparse.ArgumentParser(description="Run JavaScript benchmarks.")
     parser.add_argument("--executable", "-e", default="js", help="Path to the JavaScript executable.")
+    parser.add_argument("--wasm-executable", "-we", default="wasm", help="Path to the WebAssembly executable.")
     parser.add_argument("--iterations", "-i", type=int, default=3, help="Number of iterations for each test.")
     parser.add_argument("--suites", "-s", default="all", help="Comma-separated list of suites to run.")
     parser.add_argument("--warmups", "-w", type=int, default=0, help="Number of warm-up runs of SunSpider.")
@@ -43,7 +44,7 @@ def main():
     args = parser.parse_args()
 
     if args.suites == "all":
-        suites = ["SunSpider", "Kraken", "Octane", "JetStream", "JetStream3", "RegExp", "MicroBench"]
+        suites = ["SunSpider", "Kraken", "Octane", "JetStream", "JetStream3", "RegExp", "MicroBench", "WasmMicroBench"]
     else:
         suites = args.suites.split(",")
 
@@ -62,10 +63,25 @@ def main():
 
     for suite in suites:
         results[suite] = {}
+        is_wasm_bench = suite == "WasmMicroBench"
+
+        executable = ""
+        executable_arguments = []
+        if (is_wasm_bench):
+            executable = args.wasm_executable
+            executable_arguments = ["-e", "run_microbench"]
+        else:
+            executable = args.executable
+
         for test_file in sorted(os.listdir(suite)):
-            if not test_file.endswith(".js"):
-                continue
-            mean, stdev, min_time, max_time, runs = run_benchmark(args.executable, suite, test_file, args.iterations, current_test, total_tests)
+            if (is_wasm_bench):
+                if not test_file.endswith(".wasm"):
+                    continue
+            else:
+                if not test_file.endswith(".js"):
+                    continue
+
+            mean, stdev, min_time, max_time, runs = run_benchmark(executable, executable_arguments, suite, test_file, args.iterations, current_test, total_tests)
             results[suite][test_file] = {
                 "mean": mean,
                 "stdev": stdev,
