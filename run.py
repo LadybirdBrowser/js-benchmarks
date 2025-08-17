@@ -54,7 +54,7 @@ def main():
             for test_file in sorted(os.listdir("SunSpider")):
                 if not test_file.endswith(".js"):
                     continue
-                run_benchmark(args.executable, "SunSpider", test_file, 1, 0, 0, suppress_output=True)
+                run_benchmark(args.executable, [], "SunSpider", test_file, 1, 0, 0, suppress_output=True)
 
     results = {}
     table_data = []
