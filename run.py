@@ -71,6 +71,7 @@ def main():
         "MicroBench": {"suffix": ".js"},
         "WasmMicroBench": {"suffix": ".wasm", "arguments": ["-e", "run_microbench"]},
         "WasmCoremark": {"suffix": ".wasm", "arguments": ["-e", "run", "--export-js", "env.clock_ms:i64=BigInt(+new Date)"], "metric": ScoreMetric.output},
+        "WasmRustBench": {"suffix": ".wasm", "arguments": ["-e", "_start", "-w"]},
     }
     warmup_suite = "SunSpider"
 
