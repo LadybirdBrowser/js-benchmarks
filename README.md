@@ -29,3 +29,21 @@ You may find it useful to use [WebAssembly Binary Toolkit](https://github.com/We
 ### .wat files
 
 If you want to benchmark a specific instruction sequence, you can write a WebAssembly Text Format (.wat) file and compile it to Wasm with the wat2wasm tool from the [WebAssembly Binary Toolkit](https://github.com/WebAssembly/wabt).
+
+## WebAssembly Rust Benchmarks (WasmRustBench)
+
+This folder contains pre-compiled WebAssembly benchmarks written in Rust. Rust is currently a popular language to use for Wasm and allows using crates such as regex in Wasm benchmarks.
+
+Install [Rust as per the instructions on their website](https://www.rust-lang.org/learn/get-started) and then install the wasm32-wasip1 target with:
+```bash
+rustup target add wasm32-wasip1
+```
+
+To add a new benchmark, copy the `template` folder within the `sources` folder, set the package name in Cargo.toml to the name of your benchmark and add your benchmark code to `main` in `src/main.rs`.
+
+Compile Rust with:
+```bash
+cargo build --release
+```
+
+After compiling, copy the resulting `.wasm` file from the `target/wasm32-wasip1/release` folder into the `WasmRustBench` folder.
