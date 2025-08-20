@@ -1,37 +1,57 @@
 #!/usr/bin/env python3
 
 import argparse
+import enum
 import json
 import os
-import subprocess
+import re
+import shlex
 import statistics
+import subprocess
 import sys
 from tabulate import tabulate
 
-def run_benchmark(executable, executable_arguments, suite, test_file, iterations, index, total, suppress_output=False):
-    times = []
+FLOAT_RE = re.compile(r"([0-9]*\.[0-9]+|[0-9]+)")
+
+class ScoreMetric(enum.Enum):
+    time = "time"
+    output = "reported_score"
+
+def run_benchmark(executable, executable_arguments, suite, test_file, score_metric, iterations, index, total, suppress_output=False):
+    unit = "s" if score_metric == ScoreMetric.time else ""
+    measures = { k:[] for k in ScoreMetric }
+
     for i in range(iterations):
         if not suppress_output:
-            print(f"[{index}/{total}] {suite}/{test_file} (Iteration {i+1}/{iterations}, Avg: {statistics.mean(times):.3f}s)" if times else f"[{index}/{total}] {suite}/{test_file} (Iteration {i+1}/{iterations})", end="\r")
+            print(f"[{index}/{total}] {suite}/{test_file} (Iteration {i+1}/{iterations}, Avg: {statistics.mean(measures[score_metric]):.3f}{unit})" if measures[score_metric] else f"[{index}/{total}] {suite}/{test_file} (Iteration {i+1}/{iterations})", end="\r")
             sys.stdout.flush()
 
-        result = subprocess.run([f"time -p {executable} {' '.join(executable_arguments)} {suite}/{test_file}"], shell=True, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True, executable="/bin/bash")
+        result = subprocess.run([f"time -p {shlex.quote(executable)} {' '.join(shlex.quote(arg) for arg in executable_arguments)} {suite}/{test_file}"], shell=True, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL if score_metric == ScoreMetric.time else subprocess.PIPE, text=True, executable="/bin/bash")
         result.check_returncode()
 
         time_output = result.stderr.split("\n")
         real_time_line = [line for line in time_output if "real" in line][0]
         time_taken = float(real_time_line.split(" ")[-1])
-        times.append(time_taken)
+        measures[ScoreMetric.time].append(time_taken)
 
-    mean = statistics.mean(times)
-    stdev = statistics.stdev(times) if len(times) > 1 else 0
-    min_time = min(times)
-    max_time = max(times)
+        if score_metric == ScoreMetric.output:
+            output = result.stdout.split("\n")
+            value = None
+            for line in output:
+                if match := FLOAT_RE.search(line):
+                    value = float(match[1])
+            assert value is not None, "Expected a float in the benchmark output"
+            measures[ScoreMetric.output].append(value)
+
+    means = { key:statistics.mean(values) if len(values) > 0 else None for key, values in measures.items() }
+    stdevs = { key:statistics.stdev(values) if len(values) > 1 else 0 for key, values in measures.items() }
+    min_values = { key:min(values) if len(values) > 0 else None for key, values in measures.items() }
+    max_values = { key:max(values) if len(values) > 0 else None for key, values in measures.items() }
     if not suppress_output:
-        print(f"[{index}/{total}] {suite}/{test_file} completed. Mean: {mean:.3f}s ± {stdev:.3f}s, Range: {min_time:.3f}s … {max_time:.3f}s\033[K")
+        print(f"[{index}/{total}] {suite}/{test_file} completed. Mean: {means[score_metric]:.3f}{unit} ± {stdevs[score_metric]:.3f}{unit}, Range: {min_values[score_metric]:.3f}{unit} … {max_values[score_metric]:.3f}{unit}\033[K")
         sys.stdout.flush()
 
-    return mean, stdev, min_time, max_time, times
+    return means, stdevs, min_values, max_values, measures
 
 def main():
     parser = argparse.ArgumentParser(description="Run JavaScript benchmarks.")
@@ -44,7 +64,7 @@ def main():
     args = parser.parse_args()
 
     if args.suites == "all":
-        suites = ["SunSpider", "Kraken", "Octane", "JetStream", "JetStream3", "RegExp", "MicroBench", "WasmMicroBench"]
+        suites = ["SunSpider", "Kraken", "Octane", "JetStream", "JetStream3", "RegExp", "MicroBench", "WasmMicroBench", "WasmCoremark"]
     else:
         suites = args.suites.split(",")
 
@@ -54,7 +74,7 @@ def main():
             for test_file in sorted(os.listdir("SunSpider")):
                 if not test_file.endswith(".js"):
                     continue
-                run_benchmark(args.executable, [], "SunSpider", test_file, 1, 0, 0, suppress_output=True)
+                run_benchmark(args.executable, [], "SunSpider", ScoreMetric.time, test_file, 1, 0, 0, suppress_output=True)
 
     results = {}
     table_data = []
@@ -64,32 +84,41 @@ def main():
     for suite in suites:
         results[suite] = {}
         is_wasm_bench = suite == "WasmMicroBench"
+        is_wasm_coremark = suite == "WasmCoremark"
 
         executable = ""
         executable_arguments = []
+        score_metric = ScoreMetric.time
         if (is_wasm_bench):
             executable = args.wasm_executable
             executable_arguments = ["-e", "run_microbench"]
+        elif is_wasm_coremark:
+            executable = args.wasm_executable
+            executable_arguments = ["-e", "run", "--export-js", "env.clock_ms:i64=BigInt(+new Date)"]
+            score_metric = ScoreMetric.output
         else:
             executable = args.executable
 
         for test_file in sorted(os.listdir(suite)):
-            if (is_wasm_bench):
+            if (is_wasm_bench or is_wasm_coremark):
                 if not test_file.endswith(".wasm"):
                     continue
             else:
                 if not test_file.endswith(".js"):
                     continue
 
-            mean, stdev, min_time, max_time, runs = run_benchmark(executable, executable_arguments, suite, test_file, args.iterations, current_test, total_tests)
+            stats = run_benchmark(executable, executable_arguments, suite, test_file, score_metric, args.iterations, current_test, total_tests)
             results[suite][test_file] = {
-                "mean": mean,
-                "stdev": stdev,
-                "min": min_time,
-                "max": max_time,
-                "runs": runs
+                key.value: {
+                    "mean": mean,
+                    "stdev": stdev,
+                    "min": min_val,
+                    "max": max_val,
+                    "runs": runs,
+                } for key, (mean, stdev, min_val, max_val, runs) in zip(stats[0].keys(), zip(*(x.values() for x in stats))) if runs
             }
-            table_data.append([suite, test_file, f"{mean:.3f} ± {stdev:.3f}", f"{min_time:.3f} … {max_time:.3f}"])
+            mean, stdev, min_val, max_val, _ = (stat[score_metric] for stat in stats)
+            table_data.append([suite, test_file, f"{mean:.3f} ± {stdev:.3f}", f"{min_val:.3f} … {max_val:.3f}"])
             current_test += 1
 
     print(tabulate(table_data, headers=["Suite", "Test", "Mean ± σ", "Range (min … max)"]))
