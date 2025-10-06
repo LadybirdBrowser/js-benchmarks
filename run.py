@@ -60,6 +60,7 @@ def main():
     parser.add_argument("--iterations", "-i", type=int, default=3, help="Number of iterations for each test.")
     parser.add_argument("--suites", "-s", default="all", help="Comma-separated list of suites to run.")
     parser.add_argument("--warmups", "-w", type=int, default=0, help="Number of warm-up runs of SunSpider.")
+    parser.add_argument("--continue-on-failure", "-c", action=argparse.BooleanOptionalAction, help="Continue on a test failure instead of exiting.")
     parser.add_argument("--output", "-o", default="results.json", help="JSON output file name.")
     args = parser.parse_args()
 
@@ -79,7 +80,7 @@ def main():
     results = {}
     table_data = []
     total_tests = sum(len(os.listdir(suite)) for suite in suites)
-    current_test = 1
+    current_test = 0
 
     for suite in suites:
         results[suite] = {}
@@ -107,7 +108,15 @@ def main():
                 if not test_file.endswith(".js"):
                     continue
 
-            stats = run_benchmark(executable, executable_arguments, suite, test_file, score_metric, args.iterations, current_test, total_tests)
+            current_test += 1
+            try:
+                stats = run_benchmark(executable, executable_arguments, suite, test_file, score_metric, args.iterations, current_test, total_tests)
+            except subprocess.CalledProcessError as error:
+                if args.continue_on_failure:
+                    print(f"\nTest execution failure: {error}", file=sys.stderr);
+                    continue
+                raise
+
             results[suite][test_file] = {
                 key.value: {
                     "mean": mean,
@@ -119,7 +128,6 @@ def main():
             }
             mean, stdev, min_val, max_val, _ = (stat[score_metric] for stat in stats)
             table_data.append([suite, test_file, f"{mean:.3f} ± {stdev:.3f}", f"{min_val:.3f} … {max_val:.3f}"])
-            current_test += 1
 
     print(tabulate(table_data, headers=["Suite", "Test", "Mean ± σ", "Range (min … max)"]))
 
