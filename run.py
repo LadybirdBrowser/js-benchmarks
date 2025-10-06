@@ -10,6 +10,7 @@ import shlex
 import statistics
 import subprocess
 import sys
+import time
 from tabulate import tabulate
 
 FLOAT_RE = re.compile(r"([0-9]*\.[0-9]+|[0-9]+)")
@@ -33,12 +34,12 @@ def run_benchmark(executable, executable_arguments, test_file, score_metric, ite
             print(f"[{index}/{total}] {test_file} (Iteration {i+1}/{iterations}, Avg: {statistics.mean(measures[score_metric]):.3f}{unit})" if measures[score_metric] else f"[{index}/{total}] {test_file} (Iteration {i+1}/{iterations})", end="\r")
             sys.stdout.flush()
 
-        result = subprocess.run([f"time -p {shlex.quote(executable)} {' '.join(shlex.quote(arg) for arg in executable_arguments)} {test_file}"], shell=True, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL if score_metric == ScoreMetric.time else subprocess.PIPE, text=True, executable="/bin/bash")
+        start_time = time.perf_counter_ns()
+        result = subprocess.run([executable, *executable_arguments, test_file], stderr=subprocess.PIPE, stdout=subprocess.DEVNULL if score_metric == ScoreMetric.time else subprocess.PIPE, text=True)
+        end_time = time.perf_counter_ns()
         result.check_returncode()
 
-        time_output = result.stderr.split("\n")
-        real_time_line = [line for line in time_output if "real" in line][0]
-        time_taken = float(real_time_line.split(" ")[-1])
+        time_taken = float((end_time - start_time) / 1000000000)
         measures[ScoreMetric.time].append(time_taken)
 
         if score_metric == ScoreMetric.output:
