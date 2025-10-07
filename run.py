@@ -70,7 +70,7 @@ def main():
         "RegExp": {"suffix": ".js"},
         "MicroBench": {"suffix": ".js"},
         "WasmMicroBench": {"suffix": ".wasm", "arguments": ["-e", "run_microbench"]},
-        "WasmCoreMark": {"suffix": ".wasm", "arguments": ["-e", "run", "--export-js", "env.clock_ms:i64=BigInt(+new Date)"], "metric": ScoreMetric.output},
+        "WasmCoremark": {"suffix": ".wasm", "arguments": ["-e", "run", "--export-js", "env.clock_ms:i64=BigInt(+new Date)"], "metric": ScoreMetric.output},
     }
     warmup_suite = "SunSpider"
 
