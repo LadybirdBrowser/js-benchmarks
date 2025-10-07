@@ -4,6 +4,7 @@ import argparse
 import enum
 import json
 import os
+from pathlib import Path
 import re
 import shlex
 import statistics
@@ -17,16 +18,22 @@ class ScoreMetric(enum.Enum):
     time = "time"
     output = "reported_score"
 
-def run_benchmark(executable, executable_arguments, suite, test_file, score_metric, iterations, index, total, suppress_output=False):
+def get_tests_for_suite(suite, config):
+    return sorted(
+        str(f) for f in Path(suite).iterdir()
+        if f.is_file() and f.suffix == config["suffix"]
+    )
+
+def run_benchmark(executable, executable_arguments, test_file, score_metric, iterations, index, total, suppress_output=False):
     unit = "s" if score_metric == ScoreMetric.time else ""
     measures = { k:[] for k in ScoreMetric }
 
     for i in range(iterations):
         if not suppress_output:
-            print(f"[{index}/{total}] {suite}/{test_file} (Iteration {i+1}/{iterations}, Avg: {statistics.mean(measures[score_metric]):.3f}{unit})" if measures[score_metric] else f"[{index}/{total}] {suite}/{test_file} (Iteration {i+1}/{iterations})", end="\r")
+            print(f"[{index}/{total}] {test_file} (Iteration {i+1}/{iterations}, Avg: {statistics.mean(measures[score_metric]):.3f}{unit})" if measures[score_metric] else f"[{index}/{total}] {test_file} (Iteration {i+1}/{iterations})", end="\r")
             sys.stdout.flush()
 
-        result = subprocess.run([f"time -p {shlex.quote(executable)} {' '.join(shlex.quote(arg) for arg in executable_arguments)} {suite}/{test_file}"], shell=True, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL if score_metric == ScoreMetric.time else subprocess.PIPE, text=True, executable="/bin/bash")
+        result = subprocess.run([f"time -p {shlex.quote(executable)} {' '.join(shlex.quote(arg) for arg in executable_arguments)} {test_file}"], shell=True, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL if score_metric == ScoreMetric.time else subprocess.PIPE, text=True, executable="/bin/bash")
         result.check_returncode()
 
         time_output = result.stderr.split("\n")
@@ -48,69 +55,65 @@ def run_benchmark(executable, executable_arguments, suite, test_file, score_metr
     min_values = { key:min(values) if len(values) > 0 else None for key, values in measures.items() }
     max_values = { key:max(values) if len(values) > 0 else None for key, values in measures.items() }
     if not suppress_output:
-        print(f"[{index}/{total}] {suite}/{test_file} completed. Mean: {means[score_metric]:.3f}{unit} ± {stdevs[score_metric]:.3f}{unit}, Range: {min_values[score_metric]:.3f}{unit} … {max_values[score_metric]:.3f}{unit}\033[K")
+        print(f"[{index}/{total}] {test_file} completed. Mean: {means[score_metric]:.3f}{unit} ± {stdevs[score_metric]:.3f}{unit}, Range: {min_values[score_metric]:.3f}{unit} … {max_values[score_metric]:.3f}{unit}\033[K")
         sys.stdout.flush()
 
     return means, stdevs, min_values, max_values, measures
 
 def main():
+    available_suites = {
+        "Sunspider": {"suffix": ".js"},
+        "Kraken": {"suffix": ".js"},
+        "Octane": {"suffix": ".js"},
+        "JetStream": {"suffix": ".js"},
+        "JetStream3": {"suffix": ".js"},
+        "RegExp": {"suffix": ".js"},
+        "MicroBench": {"suffix": ".js"},
+        "WasmMicroBench": {"suffix": ".wasm", "arguments": ["-e", "run_microbench"]},
+        "WasmCoreMark": {"suffix": ".wasm", "arguments": ["-e", "run", "--export-js", "env.clock_ms:i64=BigInt(+new Date)"], "metric": ScoreMetric.output},
+    }
+    warmup_suite = "SunSpider"
+
     parser = argparse.ArgumentParser(description="Run JavaScript benchmarks.")
     parser.add_argument("--executable", "-e", default="js", help="Path to the JavaScript executable.")
     parser.add_argument("--wasm-executable", "-we", default="wasm", help="Path to the WebAssembly executable.")
     parser.add_argument("--iterations", "-i", type=int, default=3, help="Number of iterations for each test.")
     parser.add_argument("--suites", "-s", default="all", help="Comma-separated list of suites to run.")
-    parser.add_argument("--warmups", "-w", type=int, default=0, help="Number of warm-up runs of SunSpider.")
+    parser.add_argument("--warmups", "-w", type=int, default=0, help=f"Number of warm-up runs of {warmup_suite}.")
     parser.add_argument("--continue-on-failure", "-c", action=argparse.BooleanOptionalAction, help="Continue on a test failure instead of exiting.")
     parser.add_argument("--output", "-o", default="results.json", help="JSON output file name.")
     args = parser.parse_args()
 
+    suites = {}
     if args.suites == "all":
-        suites = ["SunSpider", "Kraken", "Octane", "JetStream", "JetStream3", "RegExp", "MicroBench", "WasmMicroBench", "WasmCoremark"]
+        suites = available_suites
     else:
-        suites = args.suites.split(",")
+        for suite_arg in args.suites.split(","):
+            assert suite_arg in available_suites, f"Invalid suite argument: {suite_arg}"
+            suites[suite_arg] = available_suites[suite_arg]
 
     if args.warmups > 0:
-        print("Performing warm-up runs of SunSpider...")
+        print(f"Performing warm-up runs of {warmup_suite}...")
         for _ in range(args.warmups):
-            for test_file in sorted(os.listdir("SunSpider")):
-                if not test_file.endswith(".js"):
-                    continue
-                run_benchmark(args.executable, [], "SunSpider", test_file, ScoreMetric.time, 1, 0, 0, suppress_output=True)
+            for test_file in get_tests_for_suite(warmup_suite, available_suites[warmup_suite]):
+                run_benchmark(args.executable, [], test_file, ScoreMetric.time, 1, 0, 0, suppress_output=True)
 
     results = {}
     table_data = []
-    total_tests = sum(len(os.listdir(suite)) for suite in suites)
+    total_tests = sum(len(get_tests_for_suite(suite, suites[suite])) for suite in suites)
     current_test = 0
 
-    for suite in suites:
+    for suite, config in suites.items():
         results[suite] = {}
-        is_wasm_bench = suite == "WasmMicroBench"
-        is_wasm_coremark = suite == "WasmCoremark"
 
-        executable = ""
-        executable_arguments = []
-        score_metric = ScoreMetric.time
-        if (is_wasm_bench):
-            executable = args.wasm_executable
-            executable_arguments = ["-e", "run_microbench"]
-        elif is_wasm_coremark:
-            executable = args.wasm_executable
-            executable_arguments = ["-e", "run", "--export-js", "env.clock_ms:i64=BigInt(+new Date)"]
-            score_metric = ScoreMetric.output
-        else:
-            executable = args.executable
+        executable = args.wasm_executable if config["suffix"] == ".wasm" else args.executable
+        executable_arguments = config.get("arguments", [])
+        score_metric = config.get("metric", ScoreMetric.time)
 
-        for test_file in sorted(os.listdir(suite)):
-            if (is_wasm_bench or is_wasm_coremark):
-                if not test_file.endswith(".wasm"):
-                    continue
-            else:
-                if not test_file.endswith(".js"):
-                    continue
-
+        for test_file in get_tests_for_suite(suite, config):
             current_test += 1
             try:
-                stats = run_benchmark(executable, executable_arguments, suite, test_file, score_metric, args.iterations, current_test, total_tests)
+                stats = run_benchmark(executable, executable_arguments, test_file, score_metric, args.iterations, current_test, total_tests)
             except subprocess.CalledProcessError as error:
                 if args.continue_on_failure:
                     print(f"\nTest execution failure: {error}", file=sys.stderr);
