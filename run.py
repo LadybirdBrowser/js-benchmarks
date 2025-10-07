@@ -131,7 +131,7 @@ def main():
                 } for key, (mean, stdev, min_val, max_val, runs) in zip(stats[0].keys(), zip(*(x.values() for x in stats))) if runs
             }
             mean, stdev, min_val, max_val, _ = (stat[score_metric] for stat in stats)
-            table_data.append([suite, test_file, f"{mean:.3f} ± {stdev:.3f}", f"{min_val:.3f} … {max_val:.3f}"])
+            table_data.append([suite, test_file.name, f"{mean:.3f} ± {stdev:.3f}", f"{min_val:.3f} … {max_val:.3f}"])
 
     print(tabulate(table_data, headers=["Suite", "Test", "Mean ± σ", "Range (min … max)"]))
 
