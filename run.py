@@ -62,7 +62,7 @@ def run_benchmark(executable, executable_arguments, test_file, score_metric, ite
 
 def main():
     available_suites = {
-        "Sunspider": {"suffix": ".js"},
+        "SunSpider": {"suffix": ".js"},
         "Kraken": {"suffix": ".js"},
         "Octane": {"suffix": ".js"},
         "JetStream": {"suffix": ".js"},
