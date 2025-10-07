@@ -20,7 +20,7 @@ class ScoreMetric(enum.Enum):
 
 def get_tests_for_suite(suite, config):
     return sorted(
-        str(f) for f in Path(suite).iterdir()
+        f for f in Path(suite).iterdir()
         if f.is_file() and f.suffix == config["suffix"]
     )
 
@@ -120,7 +120,7 @@ def main():
                     continue
                 raise
 
-            results[suite][test_file] = {
+            results[suite][test_file.name] = {
                 key.value: {
                     "mean": mean,
                     "stdev": stdev,
