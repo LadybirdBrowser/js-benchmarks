@@ -64,7 +64,7 @@ def main():
     available_suites = {
         "SunSpider": {"suffix": ".js"},
         "Kraken": {"suffix": ".js"},
-        "Octane": {"suffix": ".js"},
+        "Octane": {"suffix": ".js", "metric": ScoreMetric.output},
         "JetStream": {"suffix": ".js"},
         "JetStream3": {"suffix": ".js"},
         "RegExp": {"suffix": ".js"},
