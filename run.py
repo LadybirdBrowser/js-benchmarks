@@ -66,6 +66,7 @@ def main():
         "SunSpider": {"suffix": ".js"},
         "Kraken": {"suffix": ".js"},
         "Octane": {"suffix": ".js", "metric": ScoreMetric.output},
+        "GarBench": {"suffix": ".js"},
         "JetStream": {"suffix": ".js"},
         "JetStream3": {"suffix": ".js"},
         "RegExp": {"suffix": ".js"},
