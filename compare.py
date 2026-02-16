@@ -37,7 +37,7 @@ def infer_test_metrics(old_data, new_data):
         all_tests = set(old_data.get(suite, {}).keys()).union(set(new_data.get(suite, {}).keys()))
         suite_metrics = {}
         for test in all_tests:
-            all_test_metrics = set(old_data.get(suite, {}).get(test, {}).keys()).union(set(new_data.get(suite, {}).get(test, {}).keys()))
+            all_test_metrics = set(old_data.get(suite, {}).get(test, {}).keys()).union(set(new_data.get(suite, {}).get(test, {}).keys())) & METRIC_PERF_CORRELATION.keys()
             chosen_metric = "time"
             if len(all_test_metrics) == 2:
                 chosen_metric = next(x for x in all_test_metrics if x != "time")
