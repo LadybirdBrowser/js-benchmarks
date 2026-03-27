@@ -71,10 +71,14 @@ def main():
     old_totals, old_all_suites_total = calculate_totals(old_data, test_metrics)
     new_totals, new_all_suites_total = calculate_totals(new_data, test_metrics)
 
+    fmt_rss = lambda old, new: f"{(new - old) / old * 100:+.1f}% ({(new - old) / 1e6:+.1f} MB)"
     table_data = []
+    suite_rss_sums = {}
     for suite in old_data.keys():
         if suite not in new_data:
             continue
+        suite_old_rss = None
+        suite_new_rss = None
         for test in old_data[suite].keys():
             if test not in new_data[suite]:
                 continue
@@ -91,7 +95,15 @@ def main():
                 speedup = 1. / speedup
 
             formatted_speedup = f"{speedup:.3f}"
-            table_data.append([suite, test, formatted_speedup, f"{old_mean:.3f} ± {old_min:.3f} … {old_max:.3f}", f"{new_mean:.3f} ± {new_min:.3f} … {new_max:.3f}"])
+            old_rss, new_rss = old_data[suite][test].get("max_rss"), new_data[suite][test].get("max_rss")
+            if old_rss and new_rss:
+                rss_change = fmt_rss(old_rss["mean"], new_rss["mean"])
+                suite_old_rss = (suite_old_rss or 0) + old_rss["mean"]
+                suite_new_rss = (suite_new_rss or 0) + new_rss["mean"]
+            else:
+                rss_change = "—"
+            table_data.append([suite, test, formatted_speedup, f"{old_mean:.3f} ± {old_min:.3f} … {old_max:.3f}", f"{new_mean:.3f} ± {new_min:.3f} … {new_max:.3f}", rss_change])
+        suite_rss_sums[suite] = (suite_old_rss, suite_new_rss) if suite_old_rss is not None else None
 
     # Add total times comparison to the table data
     for suite in old_totals.keys():
@@ -102,13 +114,17 @@ def main():
             if METRIC_PERF_CORRELATION[suite_metrics.pop()] == "inverse":
                 speedup = 1. / speedup
 
-            table_data.append([suite, "Total", f"{speedup:.3f}", f"{old_totals[suite]:.3f}", f"{new_totals[suite]:.3f}"])
+            sums = suite_rss_sums.get(suite)
+            rss_str = fmt_rss(sums[0], sums[1]) if sums is not None else "—"
+            table_data.append([suite, "Total", f"{speedup:.3f}", f"{old_totals[suite]:.3f}", f"{new_totals[suite]:.3f}", rss_str])
 
     # Compare all suites total
     all_suites_speedup = old_all_suites_total / new_all_suites_total
-    table_data.append(["All Suites", "Total", f"{all_suites_speedup:.3f}", f"{old_all_suites_total:.3f}", f"{new_all_suites_total:.3f}"])
+    valid_sums = [s for s in suite_rss_sums.values() if s]
+    all_rss_str = fmt_rss(sum(o for o, n in valid_sums), sum(n for o, n in valid_sums)) if valid_sums else "—"
+    table_data.append(["All Suites", "Total", f"{all_suites_speedup:.3f}", f"{old_all_suites_total:.3f}", f"{new_all_suites_total:.3f}", all_rss_str])
 
-    print(tabulate(table_data, headers=["Suite", "Test", "Speedup", "Old (Mean ± Range)", "New (Mean ± Range)"]))
+    print(tabulate(table_data, headers=["Suite", "Test", "Speedup", "Old (Mean ± Range)", "New (Mean ± Range)", "Max RSS (mean)"], disable_numparse=True))
 
 if __name__ == "__main__":
     main()
