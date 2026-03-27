@@ -18,6 +18,7 @@ FLOAT_RE = re.compile(r"([0-9]*\.[0-9]+|[0-9]+)")
 class ScoreMetric(enum.Enum):
     time = "time"
     output = "reported_score"
+    max_rss = "max_rss"
 
 def get_tests_for_suite(suite, config):
     return sorted(
@@ -35,15 +36,23 @@ def run_benchmark(executable, executable_arguments, test_file, score_metric, ite
             sys.stdout.flush()
 
         start_time = time.perf_counter_ns()
-        result = subprocess.run([executable, *executable_arguments, test_file], stderr=subprocess.PIPE, stdout=subprocess.DEVNULL if score_metric == ScoreMetric.time else subprocess.PIPE, text=True)
+        proc = subprocess.Popen([executable, *executable_arguments, test_file], stderr=subprocess.PIPE, stdout=subprocess.DEVNULL if score_metric == ScoreMetric.time else subprocess.PIPE, text=True)
+
+        _, status, rusage = os.wait4(proc.pid, 0)
         end_time = time.perf_counter_ns()
-        result.check_returncode()
+        proc.returncode = os.waitstatus_to_exitcode(status)
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(proc.returncode, proc.args)
+        max_rss = rusage.ru_maxrss
+        if sys.platform.startswith("linux"):
+            max_rss *= 1024
+        measures[ScoreMetric.max_rss].append(max_rss)
 
         time_taken = float((end_time - start_time) / 1000000000)
         measures[ScoreMetric.time].append(time_taken)
 
         if score_metric == ScoreMetric.output:
-            output = result.stdout.split("\n")
+            output = proc.stdout.read().split("\n")
             value = None
             for line in output:
                 if match := FLOAT_RE.search(line):
@@ -139,9 +148,11 @@ def main():
                 },
             }
             mean, stdev, min_val, max_val, _ = (stat[score_metric] for stat in stats)
-            table_data.append([suite, test_file.name, f"{mean:.3f} ± {stdev:.3f}", f"{min_val:.3f} … {max_val:.3f}"])
+            mem_mean = stats[0][ScoreMetric.max_rss]
+            mem_col = f"{mem_mean / 1e6:.1f} MB" if mem_mean else "—"
+            table_data.append([suite, test_file.name, f"{mean:.3f} ± {stdev:.3f}", f"{min_val:.3f} … {max_val:.3f}", mem_col])
 
-    print(tabulate(table_data, headers=["Suite", "Test", "Mean ± σ", "Range (min … max)"]))
+    print(tabulate(table_data, headers=["Suite", "Test", "Mean ± σ", "Range (min … max)", "Max RSS (mean)"]))
 
     with open(args.output, "w") as f:
         json.dump(results, f, indent=4)
