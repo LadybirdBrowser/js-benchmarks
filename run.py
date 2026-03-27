@@ -20,10 +20,17 @@ class ScoreMetric(enum.Enum):
     output = "reported_score"
 
 def get_tests_for_suite(suite, config):
-    return sorted(
-        f for f in Path(suite).iterdir()
+    files = sorted(
+        f
+        for d in config.get("directories", [suite])
+        for f in Path(d).iterdir()
         if f.is_file() and f.suffix == config["suffix"]
     )
+    if config.get("concat"):
+        out = Path(suite) / "all-files.js"
+        out.write_text("".join(f.read_text(errors="replace") for f in files))
+        return [out]
+    return files
 
 def run_benchmark(executable, executable_arguments, test_file, score_metric, iterations, index, total, suppress_output=False):
     unit = "s" if score_metric == ScoreMetric.time else ""
@@ -72,6 +79,12 @@ def main():
         "RegExp": {"suffix": ".js"},
         "MicroBench": {"suffix": ".js"},
         "AsyncBench": {"suffix": ".js"},
+        "ParseBench": {
+            "suffix": ".js",
+            "arguments": ["--parse-only"],
+            "directories": ["JetStream", "Kraken", "LongSpider", "Octane", "RegExp", "SunSpider"],
+            "concat": True,
+        },
         "WasmMicroBench": {"suffix": ".wasm", "arguments": ["-e", "run_microbench"]},
         "WasmCoremark": {"suffix": ".wasm", "arguments": ["-e", "run", "--export-js", "env.clock_ms:i64=BigInt(+new Date)"], "metric": ScoreMetric.output},
         "WasmRustBench": {"suffix": ".wasm", "arguments": ["-e", "_start", "-w"]},
