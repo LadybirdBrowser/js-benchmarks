@@ -69,6 +69,8 @@ def main():
         "GarBench": {"suffix": ".js"},
         "JetStream": {"suffix": ".js"},
         "JetStream3": {"suffix": ".js"},
+        "JetStreamExtra": {"suffix": ".js"},
+        "ARES-6": {"suffix": ".js"},
         "RegExp": {"suffix": ".js"},
         "MicroBench": {"suffix": ".js"},
         "AsyncBench": {"suffix": ".js"},
