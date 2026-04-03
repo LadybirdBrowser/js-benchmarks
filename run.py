@@ -95,6 +95,7 @@ def run_benchmark(executable, executable_arguments, test_file, score_metric, ite
 def main():
     available_suites = {
         "SunSpider": {"suffix": ".js"},
+        "LongSpider": {"suffix": ".js"},
         "Kraken": {"suffix": ".js"},
         "Octane": {"suffix": ".js", "metric": ScoreMetric.output},
         "GarBench": {"suffix": ".js"},
