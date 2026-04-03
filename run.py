@@ -2,15 +2,21 @@
 
 import argparse
 import enum
+import gzip
+import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import shlex
 import statistics
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+import brotli
 from tabulate import tabulate
 
 FLOAT_RE = re.compile(r"([0-9]*\.[0-9]+|[0-9]+)")
@@ -18,6 +24,63 @@ FLOAT_RE = re.compile(r"([0-9]*\.[0-9]+|[0-9]+)")
 class ScoreMetric(enum.Enum):
     time = "time"
     output = "reported_score"
+
+WAYBACK_PREFIX = "https://web.archive.org/web/2id_/"
+
+def sha256(data):
+    return hashlib.sha256(data).hexdigest()
+
+def download(url):
+    for attempt in [url, WAYBACK_PREFIX + url]:
+        try:
+            req = urllib.request.Request(attempt, headers={
+                "Accept-Encoding": "identity",
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            })
+            with urllib.request.urlopen(req) as resp:
+                data = resp.read()
+                encoding = resp.headers.get("content-encoding", "")
+                if encoding == "br":
+                    data = brotli.decompress(data)
+                elif encoding == "gzip" or data[:2] == b"\x1f\x8b":
+                    data = gzip.decompress(data)
+                return data
+        except (urllib.error.URLError, urllib.error.HTTPError) as e:
+            print(f"{attempt}: {e}")
+            continue
+    raise RuntimeError(f"Failed to download {url}")
+
+def read_downloaded_content(filepath, polyfill):
+    return filepath.read_bytes().removeprefix(polyfill)
+
+def build_downloaded_content(urls, download_cache, filename):
+    chunks = []
+    for i, url in enumerate(urls):
+        if url not in download_cache:
+            label = filename if len(urls) == 1 else f"{filename} ({i+1}/{len(urls)})"
+            print(f"Downloading {label}...")
+            download_cache[url] = download(url)
+        chunks.append(download_cache[url])
+    return b"\n".join(chunks)
+
+def ensure_downloaded_file(filepath, entry, polyfill, download_cache):
+    urls = entry["urls"]
+    expected_sha256 = entry["sha256"]
+    if filepath.exists():
+        actual_sha256 = sha256(read_downloaded_content(filepath, polyfill))
+        if actual_sha256 == expected_sha256:
+            return
+        print(f"{filepath}: SHA-256 mismatch on disk, expected {expected_sha256}, got {actual_sha256}")
+
+    content = build_downloaded_content(urls, download_cache, filepath.name)
+    actual_sha256 = sha256(content)
+    if actual_sha256 != expected_sha256:
+        raise RuntimeError(f"SHA-256 mismatch for {filepath.name}: expected {expected_sha256}, got {actual_sha256}")
+
+    desired_file_content = polyfill + content
+    if filepath.exists() and filepath.read_bytes() == desired_file_content:
+        return
+    filepath.write_bytes(desired_file_content)
 
 def get_tests_for_suite(suite, config):
     return sorted(
@@ -77,6 +140,8 @@ def main():
         "WasmMicroBench": {"suffix": ".wasm", "arguments": ["-e", "run_microbench"]},
         "WasmCoremark": {"suffix": ".wasm", "arguments": ["-e", "run", "--export-js", "env.clock_ms:i64=BigInt(+new Date)"], "metric": ScoreMetric.output},
         "WasmRustBench": {"suffix": ".wasm", "arguments": ["-e", "_start", "-w"]},
+        "Websites/parse": {"suffix": ".js", "arguments": ["--parse-only"], "downloads": "Websites/sources.json"},
+        "Websites/run": {"suffix": ".js", "polyfill": "Websites/polyfill.js", "downloads": "Websites/sources.json"},
     }
     warmup_suite = "SunSpider"
 
@@ -95,8 +160,32 @@ def main():
         suites = available_suites
     else:
         for suite_arg in args.suites.split(","):
-            assert suite_arg in available_suites, f"Invalid suite argument: {suite_arg}"
-            suites[suite_arg] = available_suites[suite_arg]
+            if suite_arg in available_suites:
+                suites[suite_arg] = available_suites[suite_arg]
+            else:
+                matched = {k: v for k, v in available_suites.items() if k.startswith(suite_arg + "/")}
+                assert matched, f"Invalid suite argument: {suite_arg}"
+                suites.update(matched)
+
+    # Download and assemble files for suites that need them
+    download_cache = {}
+    file_arguments = {}
+    sources = {}
+    for suite, config in suites.items():
+        downloads_path = config.get("downloads")
+        if not downloads_path:
+            continue
+        if downloads_path not in sources:
+            sources[downloads_path] = json.loads(Path(downloads_path).read_text())
+        downloads = sources[downloads_path]
+        suite_dir = Path(suite)
+        suite_dir.mkdir(parents=True, exist_ok=True)
+        polyfill = (Path(config["polyfill"]).read_bytes() + b"\n") if "polyfill" in config else b""
+        for filename, entry in downloads.items():
+            assert isinstance(entry, dict), f"Download entry for {filename} must be an object"
+            if "arguments" in entry:
+                file_arguments[str(suite_dir / filename)] = entry["arguments"]
+            ensure_downloaded_file(suite_dir / filename, entry, polyfill, download_cache)
 
     if args.warmups > 0:
         print(f"Performing warm-up runs of {warmup_suite}...")
@@ -119,7 +208,8 @@ def main():
         for test_file in get_tests_for_suite(suite, config):
             current_test += 1
             try:
-                stats = run_benchmark(executable, executable_arguments, test_file, score_metric, args.iterations, current_test, total_tests)
+                extra_args = file_arguments.get(str(test_file), [])
+                stats = run_benchmark(executable, executable_arguments + extra_args, test_file, score_metric, args.iterations, current_test, total_tests)
             except subprocess.CalledProcessError as error:
                 if args.continue_on_failure:
                     print(f"\nTest execution failure: {error}", file=sys.stderr);
