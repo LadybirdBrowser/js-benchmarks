@@ -10,6 +10,7 @@ import shlex
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from tabulate import tabulate
 
@@ -35,14 +36,44 @@ def run_benchmark(executable, executable_arguments, test_file, score_metric, ite
             print(f"[{index}/{total}] {test_file} (Iteration {i+1}/{iterations}, Avg: {statistics.mean(measures[score_metric]):.3f}{unit})" if measures[score_metric] else f"[{index}/{total}] {test_file} (Iteration {i+1}/{iterations})", end="\r")
             sys.stdout.flush()
 
-        start_time = time.perf_counter_ns()
-        proc = subprocess.Popen([executable, *executable_arguments, test_file], stderr=subprocess.PIPE, stdout=subprocess.DEVNULL if score_metric == ScoreMetric.time else subprocess.PIPE, text=True)
+        with tempfile.TemporaryFile(mode="w+t") as stderr_file:
+            stdout_file = None
+            stdout_target = subprocess.DEVNULL
+            if score_metric == ScoreMetric.output:
+                stdout_file = tempfile.TemporaryFile(mode="w+t")
+                stdout_target = stdout_file
 
-        _, status, rusage = os.wait4(proc.pid, 0)
-        end_time = time.perf_counter_ns()
-        proc.returncode = os.waitstatus_to_exitcode(status)
-        if proc.returncode != 0:
-            raise subprocess.CalledProcessError(proc.returncode, proc.args)
+            try:
+                start_time = time.perf_counter_ns()
+                proc = subprocess.Popen([executable, *executable_arguments, test_file], stderr=stderr_file, stdout=stdout_target, text=True)
+
+                _, status, rusage = os.wait4(proc.pid, 0)
+                end_time = time.perf_counter_ns()
+                proc.returncode = os.waitstatus_to_exitcode(status)
+
+                stderr_file.seek(0)
+                stderr_output = stderr_file.read()
+
+                if proc.returncode != 0:
+                    stdout_output = None
+                    if stdout_file is not None:
+                        stdout_file.seek(0)
+                        stdout_output = stdout_file.read()
+                    raise subprocess.CalledProcessError(proc.returncode, proc.args, output=stdout_output, stderr=stderr_output)
+
+                if score_metric == ScoreMetric.output:
+                    stdout_file.seek(0)
+                    output = stdout_file.read().split("\n")
+                    value = None
+                    for line in output:
+                        if match := FLOAT_RE.search(line):
+                            value = float(match[1])
+                    assert value is not None, "Expected a float in the benchmark output"
+                    measures[ScoreMetric.output].append(value)
+            finally:
+                if stdout_file is not None:
+                    stdout_file.close()
+
         max_rss = rusage.ru_maxrss
         if sys.platform.startswith("linux"):
             max_rss *= 1024
@@ -50,15 +81,6 @@ def run_benchmark(executable, executable_arguments, test_file, score_metric, ite
 
         time_taken = float((end_time - start_time) / 1000000000)
         measures[ScoreMetric.time].append(time_taken)
-
-        if score_metric == ScoreMetric.output:
-            output = proc.stdout.read().split("\n")
-            value = None
-            for line in output:
-                if match := FLOAT_RE.search(line):
-                    value = float(match[1])
-            assert value is not None, "Expected a float in the benchmark output"
-            measures[ScoreMetric.output].append(value)
 
     means = { key:statistics.mean(values) if len(values) > 0 else None for key, values in measures.items() }
     stdevs = { key:statistics.stdev(values) if len(values) > 1 else 0 for key, values in measures.items() }
