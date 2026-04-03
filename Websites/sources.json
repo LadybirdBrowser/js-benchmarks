@@ -1,0 +1,36 @@
+{
+    "discord-web-2026-04-03.js": {
+        "urls": [
+            "https://discord.com/assets/web.d8e01d30314ef1ad.js"
+        ],
+        "sha256": "bfb7f8aeb7872169a7e5792c83ee031ab1190014139cc0d9b1be9cd8b8e448dc"
+    },
+    "google-docs-2026-04-03.js": {
+        "urls": [
+            "https://docs.google.com/_/docs/_/js/k=docs.client_js_prod.en.GJ8AjzeSbeo.es5.O/am=AAA4AAw/d=0/wt=0/rs=AGWKN8mpvTleOz-T2eSQvMg7rQFCMMNHHg/m=kix_core",
+            "https://docs.google.com/_/docs/_/js/k=docs.client_js_prod.en.GJ8AjzeSbeo.es5.O/am=AAA4AAw/d=0/wt=0/rs=AGWKN8mpvTleOz-T2eSQvMg7rQFCMMNHHg/m=kix_nestedsketchycore",
+            "https://docs.google.com/_/docs/_/js/k=docs.client_js_prod.en.GJ8AjzeSbeo.es5.O/am=AAA4AAw/d=0/wt=0/rs=AGWKN8mpvTleOz-T2eSQvMg7rQFCMMNHHg/m=kix_app",
+            "https://docs.google.com/_/docs/_/js/k=docs.client_js_prod.en.GJ8AjzeSbeo.es5.O/am=AAA4AAw/d=0/wt=0/rs=AGWKN8mpvTleOz-T2eSQvMg7rQFCMMNHHg/m=kix_docos",
+            "https://docs.google.com/_/docs/_/js/k=docs.client_js_prod.en.GJ8AjzeSbeo.es5.O/am=AAA4AAw/d=0/wt=0/rs=AGWKN8mpvTleOz-T2eSQvMg7rQFCMMNHHg/m=kix_pre_tertiary_deps",
+            "https://docs.google.com/_/docs/_/js/k=docs.client_js_prod.en.GJ8AjzeSbeo.es5.O/am=AAA4AAw/d=0/wt=0/rs=AGWKN8mpvTleOz-T2eSQvMg7rQFCMMNHHg/m=kix_tertiary",
+            "https://docs.google.com/_/docs/_/js/k=docs.client_js_prod.en.GJ8AjzeSbeo.es5.O/am=AAA4AAw/d=0/wt=0/rs=AGWKN8mpvTleOz-T2eSQvMg7rQFCMMNHHg/m=kix_add_ons",
+            "https://docs.google.com/_/docs/_/js/k=docs.client_js_prod.en.GJ8AjzeSbeo.es5.O/am=AAA4AAw/d=0/wt=0/rs=AGWKN8mpvTleOz-T2eSQvMg7rQFCMMNHHg/m=kix_explore",
+            "https://docs.google.com/_/docs/_/js/k=docs.client_js_prod.en.GJ8AjzeSbeo.es5.O/am=AAA4AAw/d=0/wt=0/rs=AGWKN8mpvTleOz-T2eSQvMg7rQFCMMNHHg/m=kix_approvals",
+            "https://docs.google.com/_/docs/_/js/k=docs.client_js_prod.en.GJ8AjzeSbeo.es5.O/am=AAA4AAw/d=0/wt=0/rs=AGWKN8mpvTleOz-T2eSQvMg7rQFCMMNHHg/m=kix_companion"
+        ],
+        "sha256": "e3968d18f5eb8f176d15636f9897cceb5cc9f8e65c19769182f4841e9eb24e0b"
+    },
+    "instagram-main-2026-04-03.js": {
+        "urls": [
+            "https://static.cdninstagram.com/rsrc.php/v4ic3z4/yO/l/en_US-j/C1Y5RbrBfRcHH1t_tP25CvQ8VbWQgx-3FTebFIYZshujOQb6KD_bvLLz-joHAWT7jZ5-cZF6wdyBhtJYE3hg2COvnJjaFyrsEuArBQL7XwGtR-rh6qYn2fkSSkxqfWxKIg_yGzrBUm-HRVeM3OhoZuF1MQQnbcdVE2oJzKTks61LlWCMGHgzkEvVPQxN88y__5V7b81DAKUoGsim5T95Uz2tWuBu_DQo6mNz8dfZ2Gu4dbtEj8d4u9RG6sxvDsW1OSSeKLsXZsbooA8AjA_G6JNkLl21ci7odNDboPV5nxTgavMTprlx0Cklr7kx1h9rM5c1NZOBG0.js"
+        ],
+        "sha256": "5330d6e5bd244455d2fbf43e688d98f0ac93fc107e12457ccd5f18e7004870c3"
+    },
+    "vscode-workbench-2026-04-03.js": {
+        "urls": [
+            "https://main.vscode-cdn.net/stable/e7fb5e96c0730b9deb70b33781f98e2f35975036/out/vs/workbench/workbench.web.main.internal.js"
+        ],
+        "arguments": ["--as-module"],
+        "sha256": "01affc504ccfbdf8d7e1fff5cee90d4e5b15dfa477394e59728d73f78b05f7ea"
+    }
+}
