@@ -172,8 +172,8 @@ def main():
         "WasmMicroBench": {"suffix": ".wasm", "arguments": ["-e", "run_microbench"]},
         "WasmCoremark": {"suffix": ".wasm", "arguments": ["-e", "run", "--export-js", "env.clock_ms:i64=BigInt(+new Date)"], "metric": ScoreMetric.output},
         "WasmRustBench": {"suffix": ".wasm", "arguments": ["-e", "_start", "-w"]},
-        "Websites/parse": {"suffix": ".js", "arguments": ["--parse-only"], "downloads": "Websites/sources.json"},
-        "Websites/run": {"suffix": ".js", "polyfill": "Websites/polyfill.js", "downloads": "Websites/sources.json"},
+        "WebsitesParse": {"suffix": ".js", "arguments": ["--parse-only"], "downloads": "Websites/sources.json"},
+        "WebsitesRun": {"suffix": ".js", "polyfill": "Websites/polyfill.js", "downloads": "Websites/sources.json"},
     }
     warmup_suite = "SunSpider"
 
@@ -195,7 +195,7 @@ def main():
             if suite_arg in available_suites:
                 suites[suite_arg] = available_suites[suite_arg]
             else:
-                matched = {k: v for k, v in available_suites.items() if k.startswith(suite_arg + "/")}
+                matched = {k: v for k, v in available_suites.items() if k.startswith(suite_arg)}
                 assert matched, f"Invalid suite argument: {suite_arg}"
                 suites.update(matched)
 
