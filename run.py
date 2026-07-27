@@ -87,11 +87,10 @@ def ensure_downloaded_file(filepath, entry, polyfill, download_cache):
         return
     filepath.write_bytes(desired_file_content)
 
-def get_tests_for_suite(suite, config, skipped_tests=None):
-    skipped_tests = skipped_tests or set()
+def get_tests_for_suite(suite, config):
     return sorted(
         f for f in Path(suite).iterdir()
-        if f.is_file() and f.suffix == config["suffix"] and f not in skipped_tests
+        if f.is_file() and f.suffix == config["suffix"]
     )
 
 def run_benchmark(executable, executable_arguments, test_file, score_metric, iterations, index, total, suppress_output=False):
@@ -207,7 +206,7 @@ def main():
     download_cache = {}
     file_arguments = {}
     sources = {}
-    skipped_tests = set()
+    skipped_suites = set()
     for suite, config in suites.items():
         downloads_path = config.get("downloads")
         if not downloads_path:
@@ -224,9 +223,9 @@ def main():
             try:
                 ensure_downloaded_file(test_file, entry, polyfill, download_cache)
             except DownloadError as error:
-                print(f"Skipping {test_file}: {error}", file=sys.stderr)
-                skipped_tests.add(test_file)
-                continue
+                print(f"Skipping {suite} suite: {error}", file=sys.stderr)
+                skipped_suites.add(suite)
+                break
             if "arguments" in entry:
                 file_arguments[str(test_file)] = entry["arguments"]
 
@@ -238,17 +237,19 @@ def main():
 
     results = {}
     table_data = []
-    total_tests = sum(len(get_tests_for_suite(suite, suites[suite], skipped_tests)) for suite in suites)
+    total_tests = sum(len(get_tests_for_suite(suite, suites[suite])) for suite in suites if suite not in skipped_suites)
     current_test = 0
 
     for suite, config in suites.items():
+        if suite in skipped_suites:
+            continue
         results[suite] = {}
 
         executable = args.wasm_executable if config["suffix"] == ".wasm" else args.executable
         executable_arguments = config.get("arguments", [])
         score_metric = config.get("metric", ScoreMetric.time)
 
-        for test_file in get_tests_for_suite(suite, config, skipped_tests):
+        for test_file in get_tests_for_suite(suite, config):
             current_test += 1
             try:
                 extra_args = file_arguments.get(str(test_file), [])
