@@ -21,6 +21,14 @@ import brotli
 from tabulate import tabulate
 
 FLOAT_RE = re.compile(r"([0-9]*\.[0-9]+|[0-9]+)")
+WASM_BENCHMARK_TIMINGS_PREFIX = "wasm-benchmark-timings: "
+WASM_BENCHMARK_PHASES = (
+    ("parse_time", "Parse"),
+    ("validation_time", "Validate"),
+    ("native_compilation_time", "Native compile"),
+    ("instantiation_time", "Instantiate"),
+    ("execution_time", "Execute"),
+)
 
 class ScoreMetric(enum.Enum):
     time = "time"
@@ -93,9 +101,40 @@ def get_tests_for_suite(suite, config):
         if f.is_file() and f.suffix == config["suffix"]
     )
 
-def run_benchmark(executable, executable_arguments, test_file, score_metric, iterations, index, total, suppress_output=False):
+def supports_wasm_benchmark_timings(executable):
+    try:
+        result = subprocess.run(
+            [executable, "--help"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        return False
+
+    return result.returncode == 0 and "--benchmark-timings" in result.stdout
+
+def parse_wasm_benchmark_timings(stderr_output):
+    records = [
+        json.loads(line.removeprefix(WASM_BENCHMARK_TIMINGS_PREFIX))
+        for line in stderr_output.splitlines()
+        if line.startswith(WASM_BENCHMARK_TIMINGS_PREFIX)
+    ]
+    if len(records) != 1:
+        raise RuntimeError(f"Expected one Wasm benchmark timing record, got {len(records)}")
+
+    record = records[0]
+    for phase, _ in WASM_BENCHMARK_PHASES:
+        values = record.get(phase)
+        if not isinstance(values, list) or not all(isinstance(value, (int, float)) for value in values):
+            raise RuntimeError(f"Invalid Wasm benchmark timing values for {phase}")
+    return record
+
+def run_benchmark(executable, executable_arguments, test_file, score_metric, iterations, index, total, suppress_output=False, collect_wasm_timings=False):
     unit = "s" if score_metric == ScoreMetric.time else ""
     measures = { k:[] for k in ScoreMetric }
+    wasm_timing_runs = []
 
     for i in range(iterations):
         if not suppress_output:
@@ -127,6 +166,16 @@ def run_benchmark(executable, executable_arguments, test_file, score_metric, ite
                         stdout_output = stdout_file.read()
                     raise subprocess.CalledProcessError(proc.returncode, proc.args, output=stdout_output, stderr=stderr_output)
 
+                if collect_wasm_timings:
+                    try:
+                        timing_record = parse_wasm_benchmark_timings(stderr_output)
+                    except (json.JSONDecodeError, RuntimeError) as error:
+                        print(f"\nWarning: Omitting WebAssembly phase timings for {test_file}: {error}", file=sys.stderr)
+                        wasm_timing_runs.clear()
+                        collect_wasm_timings = False
+                    else:
+                        wasm_timing_runs.append(timing_record)
+
                 if score_metric == ScoreMetric.output:
                     stdout_file.seek(0)
                     output = stdout_file.read().split("\n")
@@ -156,7 +205,7 @@ def run_benchmark(executable, executable_arguments, test_file, score_metric, ite
         print(f"[{index}/{total}] {test_file} completed. Mean: {means[score_metric]:.3f}{unit} ± {stdevs[score_metric]:.3f}{unit}, Range: {min_values[score_metric]:.3f}{unit} … {max_values[score_metric]:.3f}{unit}\033[K")
         sys.stdout.flush()
 
-    return means, stdevs, min_values, max_values, measures
+    return (means, stdevs, min_values, max_values, measures), wasm_timing_runs
 
 def main():
     available_suites = {
@@ -237,8 +286,11 @@ def main():
 
     results = {}
     table_data = []
+    wasm_timing_table_data = []
     total_tests = sum(len(get_tests_for_suite(suite, suites[suite])) for suite in suites if suite not in skipped_suites)
     current_test = 0
+    has_wasm_suites = any(config["suffix"] == ".wasm" for config in suites.values())
+    collect_wasm_timings = has_wasm_suites and supports_wasm_benchmark_timings(args.wasm_executable)
 
     for suite, config in suites.items():
         if suite in skipped_suites:
@@ -248,12 +300,26 @@ def main():
         executable = args.wasm_executable if config["suffix"] == ".wasm" else args.executable
         executable_arguments = config.get("arguments", [])
         score_metric = config.get("metric", ScoreMetric.time)
+        collect_suite_wasm_timings = collect_wasm_timings and config["suffix"] == ".wasm"
 
         for test_file in get_tests_for_suite(suite, config):
             current_test += 1
             try:
-                extra_args = file_arguments.get(str(test_file), [])
-                stats = run_benchmark(executable, executable_arguments + extra_args, test_file, score_metric, args.iterations, current_test, total_tests)
+                extra_args = config.get("file_arguments", {}).get(test_file.name, []) + file_arguments.get(str(test_file), [])
+                benchmark_arguments = executable_arguments + extra_args
+                if collect_suite_wasm_timings:
+                    benchmark_arguments = [*executable_arguments, "--benchmark-timings", *extra_args]
+
+                stats, wasm_timing_runs = run_benchmark(
+                    executable,
+                    benchmark_arguments,
+                    test_file,
+                    score_metric,
+                    args.iterations,
+                    current_test,
+                    total_tests,
+                    collect_wasm_timings=collect_suite_wasm_timings,
+                )
             except subprocess.CalledProcessError as error:
                 if args.continue_on_failure:
                     print(f"\nTest execution failure: {error}", file=sys.stderr);
@@ -277,7 +343,25 @@ def main():
             mem_col = f"{mem_mean / 1e6:.1f} MB" if mem_mean else "—"
             table_data.append([suite, test_file.name, f"{mean:.3f} ± {stdev:.3f}", f"{min_val:.3f} … {max_val:.3f}", mem_col])
 
+            if wasm_timing_runs:
+                phase_stats = []
+                for phase, _ in WASM_BENCHMARK_PHASES:
+                    run_totals = [sum(run[phase]) for run in wasm_timing_runs]
+                    phase_stats.append((
+                        statistics.mean(run_totals),
+                        statistics.stdev(run_totals) if len(run_totals) > 1 else 0,
+                    ))
+                wasm_timing_table_data.append([
+                    suite,
+                    test_file.name,
+                    *(f"{mean:.3f} ± {stdev:.3f}" for mean, stdev in phase_stats),
+                ])
+
     print(tabulate(table_data, headers=["Suite", "Test", "Mean ± σ", "Range (min … max)", "Max RSS (mean)"]))
+    if wasm_timing_table_data:
+        print()
+        print("WebAssembly phase timings (seconds; not used for score):")
+        print(tabulate(wasm_timing_table_data, headers=["Suite", "Test", *(f"{label} ± σ" for _, label in WASM_BENCHMARK_PHASES)]))
 
     with open(args.output, "w") as f:
         json.dump(results, f, indent=4)
