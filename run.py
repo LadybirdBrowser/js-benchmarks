@@ -174,6 +174,7 @@ def main():
         "AsyncBench": {"suffix": ".js"},
         "WasmMicroBench": {"suffix": ".wasm", "arguments": ["-e", "run_microbench"]},
         "WasmCoremark": {"suffix": ".wasm", "arguments": ["-e", "run", "--export-js", "env.clock_ms:i64=BigInt(+new Date)"], "metric": ScoreMetric.output},
+        "TinySpeedo": {"suffix": ".js"},
         "WasmRustBench": {"suffix": ".wasm", "arguments": ["-e", "_start", "-w"]},
         "WebsitesParse": {"suffix": ".js", "arguments": ["--parse-only"], "downloads": "Websites/sources.json"},
         "WebsitesRun": {"suffix": ".js", "polyfill": "Websites/polyfill.js", "downloads": "Websites/sources.json"},
